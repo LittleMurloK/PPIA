@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "PPIA"
-version = "0.1.2"
+version = "0.1.4"
 description = "calculate per-frame minimum distances between a protein and its periodic images in MD trajectories"
 requires-python = ">=3.10"
 

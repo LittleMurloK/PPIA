@@ -28,11 +28,9 @@ class CountPeriodicImagesDistance:
     def __init__(
             self,
             ref_path: str,
-            trj_files: list[str],
             selection: str = 'protein',
     ):
         self.ref_path = ref_path
-        self.trj_files = trj_files
         self.selection = selection
 
         self.shifts = ShiftsPeriodicImages()
@@ -55,32 +53,53 @@ class CountPeriodicImagesDistance:
 
         return min_dist
 
-    def calculate_block(self, block: FrameBlock) -> tuple[np.ndarray, np.ndarray]:
-        universe = mda.Universe(
-            self.ref_path,
-            self.trj_files,
-        )
-
-        protein = universe.select_atoms(self.selection)
-
+    def calculate_block(self, block: FrameBlock, trj_index) -> tuple[np.ndarray, np.ndarray]:
         frames = np.arange(block.start_frame, block.end_frame)
         distances = np.empty(block.size)
+        written = 0
 
-        trj_slice = universe.trajectory[block.start_frame:block.end_frame]
+        with tqdm(
+            total=block.size,
+            desc=f'Frames {block.start_frame}-{block.end_frame}',
+            leave=False,
+        ) as progress:
 
-        for i, timestep in enumerate(
-            tqdm(
-                trj_slice,
-                total=block.size,
-                desc=f'Frames {block.start_frame}-{block.end_frame}',
-                leave=False,
-            )
-        ):
-            distances[i] = self._calculate_frame(
-                protein=protein,
-                timestep=timestep,
+            for path, file_start, file_end in trj_index:
+                overlap_start = max(block.start_frame, file_start)
+                overlap_end = min(block.end_frame, file_end)
+
+                if overlap_start >= overlap_end:
+                    continue
+
+                local_start = overlap_start - file_start
+                local_end = overlap_end - file_end
+
+                universe = mda.Universe(self.ref_path, path)
+
+                try:
+                    protein = universe.select_atoms(self.selection)
+
+                    if protein.n_atoms == 0:
+                        raise ValueError(
+                            f"Selection is empty: {self.selection}"
+                        )
+
+                    for timestep in universe.trajectory[local_start:local_end]:
+                        global_frame = file_start + timestep
+                        results_index = global_frame - block.start_frame
+
+                        distances[results_index] = self._calculate_frame(protein, timestep)
+
+                        written += 1
+                        progress.update(1)
+
+                finally: universe.trajectory.close()
+        if written != block.size:
+            raise RuntimeError(
+                f"Expected {block.size} frames, processed {written}"
             )
         return frames, distances
+
 
 class DistanceResults:
     def __init__(self):
@@ -117,31 +136,32 @@ class PeriodicImageAnalysis:
             exclude_last=self.config.exclude_last_trajectory,
         ).collect()
 
-        self._validate_frame_range()
-
-        self.calculator = CountPeriodicImagesDistance(
-            ref_path=self.config.ref_path,
-            trj_files=self.trj_files,
-            selection=self.config.selection,
-
+        self.trj_index, self.n_total_frames = (
+            build_trj_index(
+                self.config.ref_path,
+                self.trj_files,
+            )
         )
+
+        self._validate_frame_range()
 
         self.results = DistanceResults()
 
     def _validate_frame_range(self) -> None:
-        universe = mda.Universe(
-            self.config.ref_path,
-            self.trj_files,
-        )
-
-        n_validate = universe.trajectory.n_frames
-
-        if self.config.end_frame > n_validate:
+        if not (
+            0 <= self.config.start_frame
+            < self.config.end_frame
+            <= self.n_total_frames
+        ):
             raise ValueError(
-                f'--stop={self.config.end_frame} exceeds available '
-                f'number of frames {n_validate}'
+                f'Invalid frame range '
+                f'[{self.config.start_frame}:{self.config.end_frame}]. '
+                f'Available frames: {self.n_total_frames}'
             )
-        universe.trajectory.close()
+        if self.config.workers < 1:
+            raise ValueError(
+                "workers must be at least 1"
+            )
 
     def run(self) -> tuple[np.ndarray, np.ndarray]:
         allocator = FrameBlockAllocator(
@@ -153,7 +173,7 @@ class PeriodicImageAnalysis:
         blocks = allocator.allocate()
 
         tasks = [
-            (self.config, block, self.trj_files)
+            (self.config, block, self.trj_index)
             for block in blocks
         ]
 
@@ -185,12 +205,31 @@ class PeriodicImageAnalysis:
 
 
 def _worker_calculate_block(task):
-    config, block, trj_files = task
+    config, block, trj_ind = task
 
     calculator = CountPeriodicImagesDistance(
         ref_path=config.ref_path,
-        trj_files=trj_files,
         selection=config.selection,
     )
 
-    return calculator.calculate_block(block)
+    return calculator.calculate_block(block, trj_ind)
+
+def build_trj_index(ref_path, trj_files):
+    index = []
+    curent_frame = 0
+
+    for path in tqdm(trj_files, desc='Indexing'):
+        universe = mda.Universe(ref_path, path)
+
+        try:
+            n_frames = universe.trajectory.n_frames
+        finally:
+            universe.trajectory.close()
+
+        index.append(
+            path, curent_frame, curent_frame + n_frames
+        )
+
+        curent_frame += n_frames
+
+    return index, curent_frame
