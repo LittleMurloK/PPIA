@@ -227,7 +227,7 @@ def build_trj_index(ref_path, trj_files):
             universe.trajectory.close()
 
         index.append(
-            path, curent_frame, curent_frame + n_frames
+            (path, curent_frame, curent_frame + n_frames)
         )
 
         curent_frame += n_frames
