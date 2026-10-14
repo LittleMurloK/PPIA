@@ -16,7 +16,7 @@ dependencies = [
 ]
 
 [project.scripts]
-PPIA = "pid.cli:maim"
+PPIA = "pid.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
