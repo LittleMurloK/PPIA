@@ -141,6 +141,7 @@ class PeriodicImageAnalysis:
                 f'--stop={self.config.end_frame} exceeds available '
                 f'number of frames {n_validate}'
             )
+        universe.trajectory.close()
 
     def run(self) -> tuple[np.ndarray, np.ndarray]:
         allocator = FrameBlockAllocator(
