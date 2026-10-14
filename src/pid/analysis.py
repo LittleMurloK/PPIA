@@ -136,6 +136,10 @@ class PeriodicImageAnalysis:
             exclude_last=self.config.exclude_last_trajectory,
         ).collect()
 
+        self.trj_files = self.trj_files[
+            config.start_frame:config.end_frame
+        ]
+
         self.trj_index, self.n_total_frames = (
             build_trj_index(
                 self.config.ref_path,
@@ -143,7 +147,7 @@ class PeriodicImageAnalysis:
             )
         )
 
-        self._validate_frame_range()
+        # self._validate_frame_range()
 
         self.results = DistanceResults()
 
@@ -165,9 +169,9 @@ class PeriodicImageAnalysis:
 
     def run(self) -> tuple[np.ndarray, np.ndarray]:
         allocator = FrameBlockAllocator(
-            start=self.config.start_frame,
-            end=self.config.end_frame,
-            n_workers=self.config.workers
+            start=0,
+            end=self.n_total_frames,
+            n_workers=self.config.workers,
         )
 
         blocks = allocator.allocate()
