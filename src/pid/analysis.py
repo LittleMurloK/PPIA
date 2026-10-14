@@ -85,7 +85,7 @@ class CountPeriodicImagesDistance:
                         )
 
                     for timestep in universe.trajectory[local_start:local_end]:
-                        global_frame = file_start + timestep
+                        global_frame = file_start + timestep.frame
                         results_index = global_frame - block.start_frame
 
                         distances[results_index] = self._calculate_frame(protein, timestep)
