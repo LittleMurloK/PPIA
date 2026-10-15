@@ -72,7 +72,7 @@ class CountPeriodicImagesDistance:
                     continue
 
                 local_start = overlap_start - file_start
-                local_end = overlap_end - file_end
+                local_end = overlap_end - file_start
 
                 universe = mda.Universe(self.ref_path, path)
 
